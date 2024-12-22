@@ -8,3 +8,4 @@ LunarLander:
   epsilon_min: 0.05
   learning_rate: 0.00025
   network_sync_rate: 10
+  replay_ratio: 4

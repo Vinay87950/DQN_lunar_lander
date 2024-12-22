@@ -1,128 +1,201 @@
-# run this using - python /Users/killuaa/Desktop/RL/DQN/dqn.py
-
 import gymnasium as gym
-from train import DQN
 import torch
-from replay_buffer import *
-import itertools
-import yaml
 import numpy as np
+import itertools
+import matplotlib.pyplot as plt
+import yaml
+from replay_buffer import ReplayBuffer
+from train import DQN
 
+# Set device to GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Agent:
-    def __init__(self, hyperparameters):
-        with open('/Users/killuaa/Desktop/RL/DQN/parameter.yml', 'r') as file:
+    def __init__(self, config_path):
+        with open(config_path, 'r') as file:
+            self.params = yaml.safe_load(file)["LunarLander"]
 
-            all_hyperparameters = yaml.safe_load(file)
-            parameter = all_hyperparameters[hyperparameters]
-
-        self.replay_buffer_size = parameter['replay_buffer_size']
-        self.batch_size = parameter['batch_size']
-        self.epsilon_initial = parameter['epsilon_initial']
-        self.epsilon_decay = parameter['epsilon_decay']
-        self.epsilon_min = parameter['epsilon_min']
-        self.learning_rate = parameter['learning_rate']
-        self.gamma = parameter['gamma']
-        self.network_sync_rate = parameter['network_sync_rate']
+        self.replay_buffer = ReplayBuffer(self.params['replay_buffer_size'])
+        self.batch_size = self.params['batch_size']
+        self.epsilon = self.params['epsilon_initial']
+        self.epsilon_decay = self.params['epsilon_decay']
+        self.epsilon_min = self.params['epsilon_min']
+        self.gamma = self.params['gamma']
+        self.network_sync_rate = self.params['network_sync_rate']
+        self.replay_ratio = self.params['replay_ratio']
 
         self.loss_fn = torch.nn.MSELoss()
+        self.policy_net = None
+        self.target_net = None
         self.optimizer = None
-            
-    
-    def run(self, is_training=True, render = False):
 
-        env = gym.make("LunarLander-v3", render_mode="human" if render else None)
+    def initialize_networks(self, num_states, num_actions):
+        self.policy_net = DQN(num_states, num_actions).to(device)
+        self.target_net = DQN(num_states, num_actions).to(device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=self.params['learning_rate'])
 
-        num_actions = env.observation_space.shape[0]
-        num_states = env.action_space.n
+    def select_action(self, state, is_training):
+        if is_training and np.random.rand() < self.epsilon:
+            return torch.tensor([[env.action_space.sample()]], dtype=torch.int64, device=device)
+        with torch.no_grad():
+            q_values = self.policy_net(state)
+            return torch.tensor([[q_values.argmax().item()]], dtype=torch.int64, device=device)
 
-        policy_dqn = DQN(num_states, num_actions).to(device)
+    def optimize_model(self):
+        if len(self.replay_buffer) < self.batch_size:
+            return
 
+        # Die sample-Methode gibt bereits die entpackten Tensoren zurück
+        states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
+
+        # Keine erneute Konvertierung zu Tensoren notwendig, da dies bereits im ReplayBuffer geschieht
+        states = states.to(device)
+        actions = actions.to(device)
+        rewards = rewards.to(device)
+        next_states = next_states.to(device)
+        dones = dones.to(device)
+
+        # Rest der Methode bleibt gleich
+        with torch.no_grad():
+            target_q_values = rewards + self.gamma * (1 - dones.float()) * self.target_net(next_states).max(1)[0]
+
+        current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze()
+
+        loss = self.loss_fn(current_q_values, target_q_values)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def train(self, env, num_episodes, render):
         reward_per_episode = []
         epsilon_history = []
+        step_count = 0
 
-        if is_training:
-            memory = ReplayBuffer(self.replay_buffer_size)
-
-            epsilon = self.epsilon_initial
-
-            target_dqn = policy_dqn = DQN(num_states, num_actions).to(device)
-            target_dqn.load_state_dict(policy_dqn.state_dict())
-
-            step_count = 0
-
-            # policy network optimizer Adam, can changed accordingly
-            self.optimizer = torch.optim.Adam(policy_dqn.parameters(), lr=self.learning_rate)
-
-        
-        for episode in itertools.count():
+        for episode in range(num_episodes):
             state, _ = env.reset()
             state = torch.tensor(state, dtype=torch.float32).to(device)
             terminated = False
-            episode_reward = 0.0
+            episode_reward = 0
 
-            while not terminated :
-                if is_training and np.random.rand() < epsilon:
-                    action = env.action_space.sample()
-                    action = torch.tensor(action, dtype=torch.int64).to(device)
-                else:
-                    with torch.no_grad():
-                        # convert state to tensor
-                        action = policy_dqn(state).argmax()
-                        action = torch.clamp(action,0,3)
-                          
-                new_state, reward, terminated, _, info = env.step(action.item())
+            while not terminated:
+                if render:
+                    env.render()
 
-                episode_reward += reward
-
-                # convert new_state and reward to tensor
-                new_state = torch.tensor(new_state, dtype=torch.float32).to(device)
+                # Select action
+                action = self.select_action(state, is_training=True)
+                
+                # Execute action in the environment
+                next_state, reward, terminated, truncated, _ = env.step(action.item())
+                next_state = torch.tensor(next_state, dtype=torch.float32).to(device)
                 reward = torch.tensor(reward, dtype=torch.float32).to(device)
+                
+                # Speichere action als skalaren Wert
+                action_scalar = action.item()  # Konvertiere zu einem einzelnen Wert
 
-                if is_training:
-                    memory.append((state ,new_state, action, reward, terminated))
+                # Store transition in replay buffer
+                self.replay_buffer.append((state, action_scalar, reward, next_state, terminated))
 
-                    step_count += 1
+                state = next_state
+                episode_reward += reward.item()
+                step_count += 1
 
-                state = new_state
+                # Optimize the model
+                if step_count % self.replay_ratio == 0:
+                    self.optimize_model()
 
+                # Sync target network
+                if step_count % self.network_sync_rate == 0:
+                    self.target_net.load_state_dict(self.policy_net.state_dict())
+
+            # Update epsilon
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            epsilon_history.append(self.epsilon)
             reward_per_episode.append(episode_reward)
 
-            epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
-            epsilon_history.append(epsilon)
+            # Print episode metrics
+            print(f"Episode {episode + 1}/{num_episodes}, Reward: {episode_reward:.2f}, Epsilon: {self.epsilon:.4f}")
 
-            if len(memory)>self.batch_size:
-                mini_batch = memory.sample(self.batch_size)
-                self.optimize(policy_dqn, target_dqn, mini_batch)
+        return reward_per_episode, epsilon_history
 
-                if step_count>self.network_sync_rate:
-                    target_dqn.load_state_dict(policy_dqn.state_dict())
-                    step_count = 0
+    def evaluate(self, env, num_episodes, render):
+        total_rewards = []
 
-    def optimize(self, policy_dqn, target_dqn, mini_batch):
-        for state, new_state, action, reward, terminated in mini_batch:
-            if terminated:
-                target = reward
-            else:
+        for episode in range(num_episodes):
+            state, _ = env.reset()
+            state = torch.tensor(state, dtype=torch.float32).to(device)
+            terminated = False
+            episode_reward = 0
+
+            while not terminated:
+                if render:
+                    env.render()
+
                 with torch.no_grad():
-                    target = reward + self.gamma * target_dqn(new_state).max()
+                    action = self.policy_net(state).argmax().unsqueeze(0)
+                next_state, reward, terminated, truncated, _ = env.step(action.item())
 
-            predicted_q = policy_dqn(state)
+                state = torch.tensor(next_state, dtype=torch.float32).to(device)
+                episode_reward += reward
 
-            # calculate loss for whole mini batch
-            loss = self.loss_fn(predicted_q, target)
+            total_rewards.append(episode_reward)
+            print(f"Evaluation Episode {episode + 1}/{num_episodes}, Reward: {episode_reward:.2f}")
 
-            # optimize the model
-            self.optimizer.zero_grad() # clear gradients
-            loss.backward() # computate gradients
-            self.optimizer.step() # update weights
+        avg_reward = np.mean(total_rewards)
+        print(f"Average Reward over {num_episodes} episodes: {avg_reward:.2f}")
+        return total_rewards
+    
+    @staticmethod
+    def plot(rewards, epsilons):
+        """
+    Simple function to plot training rewards and epsilon decay
+    """
+        plt.figure(figsize=(12, 5))
+    
+    # Plot rewards
+        plt.subplot(1, 2, 1)
+        plt.plot(rewards, label='Rewards')
+        plt.title('Training Rewards')
+        plt.xlabel('Episode')
+        plt.ylabel('Reward')
+        plt.grid(True)
+    
+    # Plot epsilon decay
+        plt.subplot(1, 2, 2)
+        plt.plot(epsilons, label='Epsilon', color='green')
+        plt.title('Epsilon Decay')
+        plt.xlabel('Episode')
+        plt.ylabel('Epsilon')
+        plt.grid(True)
+    
+        plt.tight_layout()
+        plt.show()
 
-        
-
-        
 if __name__ == "__main__":
-    agent = Agent("LunarLander")
-    agent.run(is_training=True,render=True)
+    config_path = '/Users/killuaa/Desktop/RL/DQN/parameter.yml'
+    env = gym.make("LunarLander-v3")
 
+    agent = Agent(config_path)
+    num_states = env.observation_space.shape[0]
+    num_actions = env.action_space.n
+    agent.initialize_networks(num_states, num_actions)
 
+    # Train the agent
+    rewards, epsilons = agent.train(env, num_episodes=600, render=False)
+
+    Agent.plot(rewards, epsilons)
+
+    # Speichere das trainierte Modell
+    model_save_path = '/Users/killuaa/Desktop/RL/DQN/trained_lunar_lander.pth'
+    torch.save({
+        'policy_net_state_dict': agent.policy_net.state_dict(),
+        'target_net_state_dict': agent.target_net.state_dict(),
+        'optimizer_state_dict': agent.optimizer.state_dict(),
+        'rewards': rewards,
+        'epsilons': epsilons
+    }, model_save_path)
+    print(f"Model saved to {model_save_path}")
+
+    # Evaluate the agent
+    agent.evaluate(env, num_episodes=10, render=True)
