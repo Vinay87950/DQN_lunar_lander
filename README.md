@@ -48,9 +48,11 @@ Reinforcement learning allows agents to learn optimal policies through trial and
 ---
 
 ## How it Works
-- Neural Network Architecture (Defined in dqn.py):
-  ` Input Layer: Encodes the state.
-  ` Hidden Layers: Two fully connected layers with ReLU activations and layer normalization for stability.
+- **Neural Network Architecture (Defined in dqn.py):**
+  
+  - **Input Layer:** Encodes the state.
+  
+  - **Hidden Layers:** Two fully connected layers with ReLU activations and layer normalization for stability.
 
 
 
