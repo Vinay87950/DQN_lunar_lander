@@ -91,4 +91,9 @@ Reinforcement learning allows agents to learn optimal policies through trial and
   <img src="lunar_lander_videos/lunar_lander_episode_0_20241222_223739.gif">
 
 
+**Afterr 600 episodes:**<br><br>
+<img src="lunar_lander_videos/lunar_lander_episode_1_20241222_223740.gif">
+
+
+
 
