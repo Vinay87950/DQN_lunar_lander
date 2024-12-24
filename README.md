@@ -20,7 +20,7 @@ This project implements a **Deep Q-Network (DQN)** to solve reinforcement learni
 3. [Usage](#usage)  
 4. [How It Works](#how-it-works)  
 5. [Results](#results)  
-6. [License](#license)  
+
 
 ---
 
