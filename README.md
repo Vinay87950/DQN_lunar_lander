@@ -64,7 +64,7 @@ Reinforcement learning allows agents to learn optimal policies through trial and
  
 - **Experience Replay:**
 
-  - **Stores transitions **(state, action, reward, next_state)* in a replay buffer
+  - Stores transitions **(state, action, reward, next_state)* in a replay buffer
 
 
 
