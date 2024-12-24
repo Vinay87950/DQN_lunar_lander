@@ -65,6 +65,29 @@ Reinforcement learning allows agents to learn optimal policies through trial and
 - **Experience Replay:**
 
   - Stores transitions **(state, action, reward, next_state)* in a replay buffer
+ 
+  - Random sampling during training to decorrelate experiences
+ 
+- **Training Pipeline (Defined in train.py):**
+
+  - Initializes the DQN and target networks
+ 
+  - Samples mini-batches from the replay buffer
+ 
+  - Optimizes the policy network using the Bellman equation:
+
+    Q(s,a) = r + γ * max(Q(s',a'))
+    
+    Where:
+    - Q(s,a) is the expected future reward for taking action a in state s
+    - r is the immediate reward
+    - γ (gamma) is the discount factor
+    - max(Q(s',a')) is the maximum expected future reward from the next state s'
+
+---
+
+## Results 
+  [Episode1 ](https://github.com/Vinay87950/DQN_lunar_lander/blob/main/lunar_lander_videos/lunar_lander_episode_2_20241222_223741.avi)
 
 
 
