@@ -53,6 +53,18 @@ Reinforcement learning allows agents to learn optimal policies through trial and
   - **Input Layer:** Encodes the state.
   
   - **Hidden Layers:** Two fully connected layers with ReLU activations and layer normalization for stability.
+ 
+  - **Output Layer:** Outputs raw Q-values for all possible actions.
+ 
+- ** Epsilon-Greedy Algorithm:**
+
+  - Balances exploration (random action selection) and exploitation (choosing the best action)
+ 
+  - Epsilon decays over time for improved convergence
+ 
+- ** Experience Replay:**
+
+  - **Stores transitions **(state, action, reward, next_state)** in a replay buffer
 
 
 
